@@ -1,0 +1,12 @@
+.{
+    .name = .xml,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.15.2",
+    .paths = .{
+        "src",
+        "examples",
+        "build.zig",
+        "build.zig.zon",
+    },
+    .fingerprint = 0x31f4d8632f5fa124,
+}

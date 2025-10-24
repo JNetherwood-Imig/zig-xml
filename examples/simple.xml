@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<item name="hello" version="1">
+  <element index="0">This is an element.</element>
+  <element index="1">This is an element.</element>
+  <element index="2">
+    This element occupies multiple lines.
+    This is to test the parser.
+  </element>
+</item>
+<item name="cruel" version="2">
+  <optional>I exist!</optional>
+  <element index="0" type="foo">This is an element.</element>
+  <element index="1" type="bar">This is an element.</element>
+  <element index="2" type="baz">
+    This element occupies multiple lines.
+    This is to test the parser.
+  </element>
+</item>
+<item name="world" version="3">
+  <optional />
+</item>
