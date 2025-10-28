@@ -30,6 +30,6 @@ fn addExample(
     exe.root_module.addImport("xml", xml);
     b.installArtifact(exe);
     const run_exe = b.addRunArtifact(exe);
-    const run_step = b.step(name, "Run \"" ++ name ++ "\" example");
+    const run_step = b.step("run-" ++ name, "Run \"" ++ name ++ "\" example");
     run_step.dependOn(&run_exe.step);
 }

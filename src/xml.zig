@@ -1,5 +1,9 @@
+//! WE CANT DO RECURSIVE DOCUMENT MEMORY INITIALIZATIONS BECAUSE OPTIONAL ITEMS ARE LAZY-INITIALIZED.
+//! THIS MEANS THAT EVERYTHING WILL HAVE TO BE LAZY-INITIALIZED IN THE PARSER FUNCTION, AND THEN DENIITIALIZED ON AN AS-NEEDED BASIS.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 const Parser = @import("Parser.zig");
 
@@ -9,6 +13,85 @@ const ItemType = enum {
     string,
 };
 
+pub fn Document(comptime Body: type) type {
+    return struct {
+        value: Body,
+
+        pub fn init(allocator: Allocator) @This() {
+            var body: Body = undefined;
+            inline for (@typeInfo(Body).@"struct".fields) |field_info| switch (field_info.type.item_type) {
+                .element => @field(body, field_info.name) = .init(allocator),
+                .attribute, .string => {},
+            };
+        }
+
+        pub fn deinit(self: *@This(), allocator: Allocator) void {
+            inline for (@typeInfo(Body).@"struct".fields) |field_info| switch (field_info.type.item_type) {
+                .element => @field(self.value, field_info.name).deinit(allocator),
+                .attribute, .string => {},
+            };
+        }
+    };
+}
+
+pub fn Element(comptime name: []const u8, comptime Body: type) type {
+    return RawElement(name, .none, Body);
+}
+
+pub fn OptionalElement(comptime name: []const u8, comptime Body: type) type {
+    return RawElement(name, .optional, Body);
+}
+
+pub fn ElementList(comptime name: []const u8, comptime Body: type) type {
+    return RawElement(name, .list, Body);
+}
+
+fn RawElement(comptime _name: []const u8, comptime _opts: enum { none, optional, list }, comptime Body: type) type {
+    return struct {
+        const item_type = ItemType.element;
+        const name = _name;
+        const opts = _opts;
+        value: switch (_opts) {
+            .none => Body,
+            .optional => ?Body,
+            .list => ArrayList(Body),
+        },
+
+        pub fn init(allocator: Allocator) @This() {
+            switch (_opts) {
+                .none => initBody(allocator),
+                .optional => {},
+            }
+        }
+
+        pub fn deinit(self: *@This(), allocator: Allocator) void {
+            switch (_opts) {
+                .none => deinitBody(self.value, allocator),
+                .optional => if (self.value) |body| deinitBody(body, allocator),
+                .list => {
+                    for (self.value.items) |*item| deinitBody(item, allocator);
+                    self.value.deinit(allocator);
+                },
+            }
+        }
+
+        fn initBody(allocator: Allocator) Body {
+            var body: Body = undefined;
+            inline for (@typeInfo(Body).@"struct".fields) |field_info| switch (field_info.type.item_type) {
+                .element => @field(body, field_info.name) = .init(allocator),
+                .attribute, .string => {},
+            };
+        }
+
+        fn deinitBody(body: Body, allocator: Allocator) void {
+            inline for (@typeInfo(Body).@"struct".fields) |field_info| switch (field_info.type.item_type) {
+                .element => @field(body, field_info.name).deinit(allocator),
+                .attribute, .string => {},
+            };
+        }
+    };
+}
+
 pub fn Attribute(comptime name: []const u8) type {
     return struct {
         const item_type = ItemType.attribute;
@@ -17,31 +100,7 @@ pub fn Attribute(comptime name: []const u8) type {
     };
 }
 
-pub fn Element(comptime name: []const u8, comptime Body: type) type {
-    return struct {
-        const item_type = ItemType.element;
-        const item_name = name;
-        value: Body,
-
-        pub fn deinit(self: *@This(), alloc: Allocator) void {
-            inline for (@typeInfo(Body).@"struct".fields) |f| {
-                var field = @field(self.value, f.name);
-                if (comptime isElem(f.type)) {
-                    switch (@typeInfo(f.type)) {
-                        .@"struct" => field.deinit(alloc),
-                        .optional => if (field) |*inner| inner.deinit(alloc),
-                        else => unreachable,
-                    }
-                } else if (comptime isElemList(f.type)) {
-                    for (field.items) |*item| {
-                        item.deinit(alloc);
-                    }
-                    field.deinit(alloc);
-                }
-            }
-        }
-    };
-}
+pub fn OptionalAttribute(comptime name: []const u8) type {}
 
 pub const String = struct {
     const item_type = ItemType.string;
