@@ -246,9 +246,10 @@ pub fn next(self: *Parser) Token {
             .tag_attr_value => switch (byte) {
                 '"' => return self.emit(.tag, .{
                     .tag = .attr_value,
-                    .bytes = self.bytes[tok_start .. self.index + 1],
+                    // .bytes = self.bytes[tok_start .. self.index + 1],
+                    .bytes = self.bytes[tok_start + 1 .. self.index],
                 }),
-                '\n' => return self.fail(.invalid_byte),
+                // '\n' => return self.fail(.invalid_byte),
                 else => {},
             },
             .comment_start => switch (byte) {

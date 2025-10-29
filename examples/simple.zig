@@ -1,35 +1,27 @@
 const std = @import("std");
 const xml = @import("xml");
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
 
 const Document = struct {
-    items: ArrayList(Item),
-
-    pub fn deinit(self: *Document, alloc: Allocator) void {
-        for (self.items.items) |*item| {
-            item.deinit(alloc);
-        }
-        self.items.deinit(alloc);
-    }
+    items: xml.ElementList("item", Item),
 };
 
-const Item = xml.Element("item", struct {
+const Item = struct {
     name: xml.Attribute("name"),
     version: xml.Attribute("version"),
-    opt: ?Optional,
-    elems: ArrayList(Element),
-});
+    optional: xml.OptionalElement("optional", struct { body: xml.String }),
+    elems: xml.ElementList("element", Element),
+};
 
-const Optional = xml.Element("optional", struct {
-    body: ?xml.String,
-});
-
-const Element = xml.Element("element", struct {
-    index: xml.Attribute("index"),
-    ty: ?xml.Attribute("type"),
+const Optional = struct {
     body: xml.String,
-});
+};
+
+const Element = struct {
+    index: xml.Attribute("index"),
+    ty: xml.OptionalAttribute("type"),
+    body: xml.String,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -38,7 +30,17 @@ pub fn main() !void {
 
     const data = @embedFile("simple.xml");
 
-    var doc = try xml.parse(Document, alloc, data);
+    var doc = try xml.parse(xml.Document(Document), alloc, data);
     defer doc.deinit(alloc);
-    std.debug.print("{any}\n", .{doc});
+
+    for (doc.value.items.value.items) |item| {
+        std.debug.print("Item (name: {s}, version: {s}):\n", .{ item.name.value, item.version.value });
+        if (item.optional.value) |value| std.debug.print("\tOptional: {s}\n", .{value.body.data});
+        for (item.elems.value.items) |elem| {
+            std.debug.print("\tElement (index: {s}", .{elem.index.value});
+            if (elem.ty.value) |value| std.debug.print(", type: {s}", .{value});
+            std.debug.print("):\n", .{});
+            std.debug.print("\t\t{s}\n", .{elem.body.data});
+        }
+    }
 }
