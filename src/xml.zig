@@ -1,28 +1,11 @@
-// TODO: support passing xml.String rather than struct { body: xml.String } to element types
-
-const std = @import("std");
-const log = std.log.scoped(.xml);
-const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
-
-const Parser = @import("Parser.zig");
-
-const ItemType = enum {
-    attribute,
-    element,
-    string,
-};
-
 pub fn Document(comptime Body: type) type {
     return struct {
         value: Body,
 
         pub fn deinit(self: *@This(), allocator: Allocator) void {
             inline for (@typeInfo(Body).@"struct".fields) |field_info| {
-                switch (field_info.type.item_type) {
-                    .element => @field(self.value, field_info.name).deinit(allocator),
-                    .attribute, .string => {},
-                }
+                if (field_info.type.item_type == .element)
+                    @field(self.value, field_info.name).deinit(allocator);
             }
         }
     };
@@ -39,6 +22,39 @@ pub fn OptionalElement(comptime name: []const u8, comptime Body: type) type {
 pub fn ElementList(comptime name: []const u8, comptime Body: type) type {
     return RawElement(name, .list, Body);
 }
+
+pub fn Attribute(comptime name: []const u8) type {
+    return RawAttribute(name, .none);
+}
+
+pub fn OptionalAttribute(comptime name: []const u8) type {
+    return RawAttribute(name, .optional);
+}
+
+pub const String = struct {
+    const item_type = ItemType.string;
+    data: []const u8,
+};
+
+pub fn parse(comptime Doc: type, allocator: Allocator, data: []const u8) !Doc {
+    var parser = Parser{ .bytes = data };
+    return parseDocument(&parser, Doc, allocator) catch err: {
+        break :err error.ParsingFailed;
+    };
+}
+
+const std = @import("std");
+const log = std.log.scoped(.xml);
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+
+const Parser = @import("Parser.zig");
+
+const ItemType = enum {
+    attribute,
+    element,
+    string,
+};
 
 fn RawElement(
     comptime _name: []const u8,
@@ -60,14 +76,12 @@ fn RawElement(
             .list => .empty,
         },
 
-        /// Recursively deinitialize all fields of self
         pub fn deinit(self: *@This(), allocator: Allocator) void {
             switch (opts) {
-                // Just deinit
                 .none => deinitBody(&self.value, allocator),
-                // Deinit if it has a value
-                .optional => if (self.value) |*body| deinitBody(body, allocator),
-                // Deinit all items and then the list itself
+                .optional => {
+                    if (self.value) |*body| deinitBody(body, allocator);
+                },
                 .list => {
                     for (self.value.items) |*item| deinitBody(item, allocator);
                     self.value.deinit(allocator);
@@ -75,29 +89,19 @@ fn RawElement(
             }
         }
 
-        /// Recursively deinitialize all fields of body
         fn deinitBody(body: *Body, allocator: Allocator) void {
             inline for (@typeInfo(Body).@"struct".fields) |field_info| {
-                switch (field_info.type.item_type) {
-                    // Deinitialize all element fields
-                    .element => @field(body, field_info.name).deinit(allocator),
-                    // Nothing to do for attributes or strings
-                    else => {},
-                }
+                if (field_info.type.item_type == .element)
+                    @field(body, field_info.name).deinit(allocator);
             }
         }
     };
 }
 
-pub fn Attribute(comptime name: []const u8) type {
-    return RawAttribute(name, .none);
-}
-
-pub fn OptionalAttribute(comptime name: []const u8) type {
-    return RawAttribute(name, .optional);
-}
-
-fn RawAttribute(comptime _name: []const u8, _opts: enum { none, optional }) type {
+fn RawAttribute(
+    comptime _name: []const u8,
+    _opts: enum { none, optional },
+) type {
     return struct {
         const item_type = ItemType.attribute;
         const name = _name;
@@ -112,19 +116,11 @@ fn RawAttribute(comptime _name: []const u8, _opts: enum { none, optional }) type
     };
 }
 
-pub const String = struct {
-    const item_type = ItemType.string;
-    data: []const u8,
-};
-
-pub fn parse(comptime Doc: type, allocator: Allocator, data: []const u8) !Doc {
-    var parser = Parser{ .bytes = data };
-    return parseDocument(&parser, Doc, allocator) catch err: {
-        break :err error.ParsingFailed;
-    };
-}
-
-fn parseDocument(parser: *Parser, comptime Doc: type, allocator: Allocator) !Doc {
+fn parseDocument(
+    parser: *Parser,
+    comptime Doc: type,
+    allocator: Allocator,
+) !Doc {
     var doc = std.mem.zeroInit(Doc, .{});
     const Body = @TypeOf(doc.value);
     inline for (@typeInfo(Body).@"struct".fields) |f|
@@ -136,13 +132,21 @@ fn parseDocument(parser: *Parser, comptime Doc: type, allocator: Allocator) !Doc
         const tok = parser.next();
         switch (tok.tag) {
             .tag_open => inline for (@typeInfo(Body).@"struct".fields) |f| {
-                if (f.type.item_type == .element and std.mem.eql(u8, f.type.name, tok.bytes)) {
+                if (f.type.item_type == .element and
+                    std.mem.eql(u8, f.type.name, tok.bytes))
+                {
                     switch (f.type.opts) {
                         .list => try @field(doc.value, f.name).value.append(
                             allocator,
                             try parseElement(parser, f.type, allocator),
                         ),
-                        else => @field(doc.value, f.name).value = try parseElement(parser, f.type, allocator),
+                        else => {
+                            @field(doc.value, f.name).value = try parseElement(
+                                parser,
+                                f.type,
+                                allocator,
+                            );
+                        },
                     }
                 }
             },
@@ -157,7 +161,11 @@ fn parseDocument(parser: *Parser, comptime Doc: type, allocator: Allocator) !Doc
     }
 }
 
-fn parseElement(parser: *Parser, comptime Elem: type, allocator: Allocator) !Elem.Body {
+fn parseElement(
+    parser: *Parser,
+    comptime Elem: type,
+    allocator: Allocator,
+) !Elem.Body {
     var body = std.mem.zeroInit(Elem.Body, .{});
     inline for (@typeInfo(Elem.Body).@"struct".fields) |f|
         if (f.type.item_type == .element and f.type.opts == .list) {
@@ -171,25 +179,40 @@ fn parseElement(parser: *Parser, comptime Elem: type, allocator: Allocator) !Ele
                     log.debug("Got body content", .{});
                     @field(body, f.name).data = tok.bytes;
                     continue :outer;
-                } orelse std.debug.panic("No fields of type xml.String were found in {s}", .{@typeName(Elem.Body)}),
+                } orelse std.debug.panic(
+                    "No fields of type xml.String were found in {s}",
+                    .{@typeName(Elem.Body)},
+                ),
             .attr_key => inline for (@typeInfo(Elem.Body).@"struct".fields) |f|
-                if (f.type.item_type == .attribute and std.mem.eql(u8, f.type.name, tok.bytes)) {
+                if (f.type.item_type == .attribute and
+                    std.mem.eql(u8, f.type.name, tok.bytes)) {
                     log.debug("Parsing attribute: \"{s}\"", .{f.type.name});
                     @field(body, f.name).value = parseAttribute(parser);
                     continue :outer;
-                } orelse std.debug.panic("Attribute \"{s}\" not found in {s}", .{ tok.tag, @typeName(Elem.Body) }),
+                } orelse std.debug.panic(
+                    "Attribute \"{s}\" not found in {s}",
+                    .{ tok.tag, @typeName(Elem.Body) },
+                ),
             .tag_open => inline for (@typeInfo(Elem.Body).@"struct".fields) |f|
-                if (f.type.item_type == .element and std.mem.eql(u8, f.type.name, tok.bytes)) {
+                if (f.type.item_type == .element and
+                    std.mem.eql(u8, f.type.name, tok.bytes)) {
                     log.debug("Parsing element: \"{s}\"", .{f.type.name});
                     switch (f.type.opts) {
                         .list => try @field(body, f.name).value.append(
                             allocator,
                             try parseElement(parser, f.type, allocator),
                         ),
-                        else => @field(body, f.name).value = try parseElement(parser, f.type, allocator),
+                        else => @field(body, f.name).value = try parseElement(
+                            parser,
+                            f.type,
+                            allocator,
+                        ),
                     }
                     continue :outer;
-                } orelse std.debug.panic("Element \"{s}\" not found in {s}", .{ tok.tag, @typeName(Elem.Body) }),
+                } orelse std.debug.panic(
+                    "Element \"{s}\" not found in {s}",
+                    .{ tok.tag, @typeName(Elem.Body) },
+                ),
             .tag_close, .tag_close_empty => return body,
             .invalid => return error.InvalidTok,
             else => std.debug.panic(
