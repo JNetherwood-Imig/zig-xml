@@ -13,6 +13,7 @@ pub fn build(b: *std.Build) void {
     const run_test_step = b.step("test", "Run tests.");
     run_test_step.dependOn(&run_test_exe.step);
     addExample(b, xml, target, optimize, "simple");
+    addExample(b, xml, target, optimize, "wayland");
 }
 
 fn addExample(
