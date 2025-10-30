@@ -128,9 +128,17 @@ fn parseDocument(
             @field(doc.value, f.name).value = try .initCapacity(allocator, 1);
         };
     errdefer doc.deinit(allocator);
-    while (true) {
+    outer: while (true) {
         const tok = parser.next();
         switch (tok.tag) {
+            .attr_key => inline for (@typeInfo(Body).@"struct".fields) |f|
+                if (f.type.item_type == .attribute and
+                    std.mem.eql(u8, f.type.name, tok.bytes))
+                {
+                    log.debug("Parsing attribute: \"{s}\"", .{f.type.name});
+                    @field(doc.value, f.name).value = parseAttribute(parser);
+                    continue :outer;
+                },
             .tag_open => inline for (@typeInfo(Body).@"struct".fields) |f| {
                 if (f.type.item_type == .element and
                     std.mem.eql(u8, f.type.name, tok.bytes))
@@ -151,8 +159,7 @@ fn parseDocument(
                 }
             },
             .tag_close, .tag_close_empty => return doc,
-            .invalid => return error.InvalidTok,
-            .doctype, .attr_key, .attr_value => {},
+            .doctype, .attr_value => {},
             else => std.debug.panic(
                 "Unexpected token while parsing doc: {s} ({s})",
                 .{ tok.bytes, @tagName(tok.tag) },
