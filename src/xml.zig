@@ -183,7 +183,6 @@ fn parseElement(
         switch (tok.tag) {
             .content => inline for (@typeInfo(Elem.Body).@"struct".fields) |f|
                 if (f.type.item_type == .string) {
-                    log.debug("Got body content", .{});
                     @field(body, f.name).data = tok.bytes;
                     continue :outer;
                 } orelse std.debug.panic(
@@ -191,9 +190,7 @@ fn parseElement(
                     .{@typeName(Elem.Body)},
                 ),
             .attr_key => inline for (@typeInfo(Elem.Body).@"struct".fields) |f|
-                if (f.type.item_type == .attribute and
-                    std.mem.eql(u8, f.type.name, tok.bytes)) {
-                    log.debug("Parsing attribute: \"{s}\"", .{f.type.name});
+                if (f.type.item_type == .attribute and std.mem.eql(u8, f.type.name, tok.bytes)) {
                     @field(body, f.name).value = parseAttribute(parser);
                     continue :outer;
                 } orelse std.debug.panic(
@@ -201,9 +198,7 @@ fn parseElement(
                     .{ tok.tag, @typeName(Elem.Body) },
                 ),
             .tag_open => inline for (@typeInfo(Elem.Body).@"struct".fields) |f|
-                if (f.type.item_type == .element and
-                    std.mem.eql(u8, f.type.name, tok.bytes)) {
-                    log.debug("Parsing element: \"{s}\"", .{f.type.name});
+                if (f.type.item_type == .element and std.mem.eql(u8, f.type.name, tok.bytes)) {
                     switch (f.type.opts) {
                         .list => try @field(body, f.name).value.append(
                             allocator,
