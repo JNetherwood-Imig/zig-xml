@@ -44,7 +44,6 @@ pub fn parse(comptime Doc: type, allocator: Allocator, data: []const u8) !Doc {
 }
 
 const std = @import("std");
-const log = std.log.scoped(.xml);
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 
@@ -135,7 +134,6 @@ fn parseDocument(
                 if (f.type.item_type == .attribute and
                     std.mem.eql(u8, f.type.name, tok.bytes))
                 {
-                    log.debug("Parsing attribute: \"{s}\"", .{f.type.name});
                     @field(doc.value, f.name).value = parseAttribute(parser);
                     continue :outer;
                 },
